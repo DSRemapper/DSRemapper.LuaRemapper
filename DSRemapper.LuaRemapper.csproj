@@ -18,23 +18,21 @@
 	  <RepositoryType>git</RepositoryType>
 	  <PackageProjectUrl>https://github.com/Oscar-Wohlfarhrt/DSRemapper</PackageProjectUrl>
 	  <RepositoryUrl>https://github.com/Oscar-Wohlfarhrt/DSRemapper</RepositoryUrl>
-	  <AssemblyVersion>0.3.1</AssemblyVersion>
-	  <FileVersion>$(AssemblyVersion)-alpha</FileVersion>
+	  <AssemblyVersion>0.3.2</AssemblyVersion>
+	  <FileVersion>$(AssemblyVersion)</FileVersion>
 	  <Version>$(FileVersion)</Version>
 	  <GenerateDocumentationFile>True</GenerateDocumentationFile>
 	  <Platforms>AnyCPU;x64</Platforms>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="DSRemapper.Core" Version="0.4.4-beta" />
-    <PackageReference Include="DSRemapper.DSROutput" Version="0.2.1-beta" />
-    <PackageReference Include="DSRemapper.MouseKeyboardOutput" Version="0.1.0-pre-alpha" />
+    <PackageReference Include="DSRemapper.Core" Version="0.4.10-dev3" ExcludeAssets="runtime" PrivateAssets="All"/>
     <PackageReference Include="MoonSharp" Version="2.0.0">
     </PackageReference>
   </ItemGroup>
 
 	<Target Name="PostBuild" AfterTargets="PostBuildEvent">
-		<Exec Command="..\DSRPackager -w -p $(OutputPath) -o &quot;..\ZipPlugins\$(ProjectName) v$(Version).dsrp&quot;" />
+		<Exec Command="..\DSRPackager -w -n &quot;$(ProjectName)&quot; -p $(OutputPath)\$(ProjectName).dll -o &quot;..\ZipPlugins\$(ProjectName) v$(Version).dsrp&quot;" Condition="'$(IS_CI_BUILD)' != 'true'"/>
 	</Target>
 
 </Project>

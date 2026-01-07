@@ -2,17 +2,15 @@
 using DSRemapper.DSRMath;
 using DSRemapper.SixAxis;
 using DSRemapper.Types;
-using DSRemapper.DSROutput;
 using MoonSharp.Interpreter;
 using System.Diagnostics;
 using System.Numerics;
-using DSRemapper.MouseKeyboardOutput;
 using Microsoft.Extensions.Logging;
 using System.Runtime.InteropServices;
 using System.Reflection;
 using MoonSharp.Interpreter.Interop;
 
-namespace DSRemapper.RemapperLua
+namespace DSRemapper.LuaRemapper
 {
     /// <summary>
     /// Remapper plugin based on lua scripts for remapping controllers
@@ -37,11 +35,7 @@ namespace DSRemapper.RemapperLua
             UserData.RegisterExtensionType(typeof(Utils), InteropAccessMode.BackgroundOptimized);
 
             UserData.RegisterType<IDSROutputController>(InteropAccessMode.BackgroundOptimized);
-            UserData.RegisterType<DSROutput.DSROutput>(InteropAccessMode.BackgroundOptimized);
-            UserData.RegisterType<MKOutput>(InteropAccessMode.BackgroundOptimized);
-            UserData.RegisterType<VirtualKeyShort>(InteropAccessMode.BackgroundOptimized);
-            UserData.RegisterType<ScanCodeShort>(InteropAccessMode.BackgroundOptimized);
-            UserData.RegisterType<MouseButton>(InteropAccessMode.BackgroundOptimized);
+            UserData.RegisterType<IDSROutput>(InteropAccessMode.BackgroundOptimized);
 
             UserData.RegisterType<Vector2>(InteropAccessMode.BackgroundOptimized);
             UserData.RegisterType<Vector3>(InteropAccessMode.BackgroundOptimized);
@@ -96,35 +90,34 @@ namespace DSRemapper.RemapperLua
             public bool IsTypeCompatible(Type type, object obj) => defaultDescriptor.IsTypeCompatible(type,obj);
         }
 
-        private Script script = new();
+        private const CoreModules CustomSandboxModules = CoreModules.Preset_SoftSandbox & ~CoreModules.LoadMethods;
+        private static Script GetSafeScript() => new(CustomSandboxModules);
+
+        private Script script = GetSafeScript();
         private Closure? luaRemap = null;
         /// <inheritdoc/>
         public event DeviceConsoleEventArgs? OnDeviceConsole;
         private string lastMessage = "";
 
-        private readonly DSROutput.DSROutput emuControllers = new();
+        private readonly IDSROutput emuControllers;
 
-        DSRLogger logger;
+        readonly DSRLogger logger;
         /// <summary>
         /// LuaInterpreter class constructor
         /// </summary>
-        public LuaInterpreter(DSRLogger logger)
+        public LuaInterpreter(IDSROutput emuControllers, DSRLogger logger)
         {
+            this.emuControllers = emuControllers;
             this.logger = logger;
         }
         /// <inheritdoc/>
-        public void SetScript(string file, Dictionary<string, Delegate> customMethods)
+        public void SetScript(FileInfo file, Dictionary<string, Delegate> customMethods)
         {
             try
             {
                 emuControllers.DisconnectAll();
-                script = new Script();
+                script = GetSafeScript();
 
-                /*Table customFuncs = new(script);
-                foreach(var method in customMethods)
-                {
-                    customFuncs[method.Value.Method.Name] = method.Value;
-                }*/
                 script.Globals["CustomFuncs"] = customMethods;
 
                 script.Globals["CreatePov"] = ()=>new DSRPov();
@@ -136,15 +129,7 @@ namespace DSRemapper.RemapperLua
                 script.Globals["inputFB"] = Utils.CreateOutputReport();
                 script.Globals["deltaTime"] = 0.0;
 
-                if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-                {
-                    script.Globals["MKOut"] = new MKOutput();
-                    script.Globals["Keys"] = new VirtualKeyShort();
-                    script.Globals["Scans"] = new ScanCodeShort();
-                    script.Globals["MButs"] = new MouseButton();
-                }
-
-                script.DoFile(file);
+                script.DoFile(file.FullName);
 
                 Closure? remapFunction = (Closure)script.Globals["Remap"];
                 luaRemap = remapFunction;
@@ -158,14 +143,17 @@ namespace DSRemapper.RemapperLua
             catch (InterpreterException e)
             {
                 luaRemap = null;
-                string msg = e.DecoratedMessage;
+                string msg = $"Lua Error: {e.DecoratedMessage}\n{e.StackTrace}";
                 logger.LogError(msg);
                 OnDeviceConsole?.Invoke(this, msg, LogLevel.Error);
+                
+                if (e.InnerException != null)
+                    logger.LogError($"{e.InnerException.Source}[{e.InnerException.TargetSite}]({e.InnerException.GetType().FullName}):\n{e.InnerException.Message}\n{e.InnerException.StackTrace}");
             }
             catch (Exception e)
             {
                 luaRemap = null;
-                logger.LogError(e.Message);
+                logger.LogError($"{e.Source}[{e.TargetSite}]({e.GetType().FullName}):\n{e.Message}\n{e.StackTrace}");
             }
         }
         /// <inheritdoc/>
@@ -178,24 +166,26 @@ namespace DSRemapper.RemapperLua
                 if (luaRemap != null)
                     script.Call(luaRemap,report);
                 IDSROutputReport? feedback = (IDSROutputReport?)script.Globals["inputFB"];
-                if(feedback!=null)
+                if(feedback != null)
                     outReport = feedback;
             }
             catch (InterpreterException e)
             {
                 luaRemap = null;
-                string msg = e.DecoratedMessage;
+                string msg = $"Lua Error: {e.DecoratedMessage}\n{e.StackTrace}";
                 logger.LogError(msg);
                 OnDeviceConsole?.Invoke(this, msg, LogLevel.Error);
+                if (e.InnerException != null)
+                    logger.LogError($"{e.InnerException.Source}[{e.InnerException.TargetSite}]({e.InnerException.GetType().FullName}):\n{e.InnerException.Message}\n{e.InnerException.StackTrace}");
             }
             catch (Exception e)
             {
+                luaRemap = null;
                 if (lastMessage != e.Message)
                 {
                     lastMessage = e.Message;
-                    logger.LogError(e.Message);
+                    logger.LogError($"{e.Source}[{e.TargetSite}]({e.GetType().FullName}):\n{e.Message}\n{e.StackTrace}");//logger.LogError(e.Message);
                 }
-                luaRemap = null;
             }
 
             return outReport;
@@ -209,7 +199,6 @@ namespace DSRemapper.RemapperLua
         {
             emuControllers.DisconnectAll();
             emuControllers.Dispose();
-            //GC.SuppressFinalize(this);
         }
     }
 }

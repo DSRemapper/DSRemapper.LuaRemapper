@@ -6,7 +6,7 @@ using MoonSharp.Interpreter;
 
 using MoonSharp.Interpreter.Serialization.Json;
 
-namespace DSRemapper.RemapperLua
+namespace DSRemapper.LuaRemapper
 {
     /// <summary>
     /// Utils class for the lua remap profiles.
@@ -14,6 +14,7 @@ namespace DSRemapper.RemapperLua
     /// </summary>
     public static class Utils
     {
+        private readonly static DirectoryInfo ConfigDir = DSRPaths.FolderPath.CreateSubdirectory("Profile Configs");
         /// <summary>
         /// Min controller axis value
         /// </summary>
@@ -196,14 +197,14 @@ namespace DSRemapper.RemapperLua
         /// <param name="table">Lua table to be saved in the file</param>
         public static void SaveTable(string path, Table table)
         {
-            if (!Directory.Exists(path))
-                Directory.CreateDirectory(path);
+            FileInfo fullPath = new(Path.Combine(ConfigDir.FullName, path));
+            if (!fullPath.FullName.StartsWith(ConfigDir.FullName,StringComparison.OrdinalIgnoreCase) || !fullPath.Exists)
+                return;
 
-            string json = JsonTableConverter.TableToJson(table);
-            if (Path.IsPathRooted(path))
-                File.WriteAllText(path, json);
-            else
-                File.WriteAllText(Path.Combine(DSRPaths.ConfigPath,path), json);
+            if (fullPath.Directory is DirectoryInfo dir && dir.Exists)
+                dir.Create();
+
+            File.WriteAllText(fullPath.FullName, JsonTableConverter.TableToJson(table));
         }
         /// <summary>
         /// Loads a lua table from a file
@@ -212,16 +213,11 @@ namespace DSRemapper.RemapperLua
         /// <returns>Lua table saved in the file</returns>
         public static Table LoadTable(string path)
         {
-            if (!Directory.Exists(path))
-                Directory.CreateDirectory(path);
+            FileInfo fullPath = new(Path.Combine(ConfigDir.FullName, path));
+            if (!fullPath.FullName.StartsWith(ConfigDir.FullName,StringComparison.OrdinalIgnoreCase) || !fullPath.Exists)
+                return new Table(null);
 
-            string json;
-            if (Path.IsPathFullyQualified(path))
-                json = File.ReadAllText(path);
-            else
-                json = File.ReadAllText(Path.Combine(DSRPaths.ConfigPath, path));
-
-            return JsonTableConverter.JsonToTable(json);
+            return JsonTableConverter.JsonToTable(File.ReadAllText(fullPath.FullName));
         }
     }
 }
